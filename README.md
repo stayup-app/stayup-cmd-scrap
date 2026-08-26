@@ -3,6 +3,8 @@
 [![CI](https://github.com/stayup-app/stayup-cmd-scrap/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/stayup-app/stayup-cmd-scrap/actions/workflows/ci.yml)
 [![Daily scrape](https://github.com/stayup-app/stayup-cmd-scrap/actions/workflows/daily.yml/badge.svg)](https://github.com/stayup-app/stayup-cmd-scrap/actions/workflows/daily.yml)
 
+**Website:** https://stayup-ui.vercel.app
+
 Scrapes blog articles from pages defined in the `profile` table and stores results in PostgreSQL.
 
 On each run the script fetches all profiles, retrieves the article links on the listing page,
