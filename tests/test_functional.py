@@ -14,6 +14,7 @@ import psycopg2
 import pytest
 
 from scrape_pages import (
+    DISPLAY_TEMPLATE,
     cleanup_old_entries,
     get_repositories,
     has_any_scrap,
@@ -23,6 +24,24 @@ from scrape_pages import (
     save_entry,
     save_error,
 )
+
+
+class TestInitDb:
+    def test_registers_name_and_display_template(self, db_conn):
+        init_db(db_conn)
+        with db_conn.cursor() as cur:
+            cur.execute("SELECT display_name, sort_order, template FROM provider_registry WHERE name = 'scrap'")
+            display_name, sort_order, template = cur.fetchone()
+        assert (display_name, sort_order) == ("Scrap", 40)
+        assert template == DISPLAY_TEMPLATE  # psycopg2 decodes JSONB
+
+    def test_is_idempotent(self, db_conn):
+        init_db(db_conn)
+        init_db(db_conn)
+        with db_conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM provider_registry WHERE name = 'scrap'")
+            assert cur.fetchone()[0] == 1
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
