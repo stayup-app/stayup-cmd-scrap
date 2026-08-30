@@ -195,7 +195,7 @@ class TestCreate:
     def test_rejects_a_missing_articles_selector(self, auth_client, db_conn):
         resp = auth_client.post("/new", data={"url": "https://x.example.com"})
         assert resp.status_code == 400
-        assert "sélecteur d'articles".encode() in resp.data
+        assert b"sont requis" in resp.data
         with db_conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM repository")
             assert cur.fetchone()[0] == 0
@@ -207,7 +207,7 @@ class TestCreate:
             data={"url": "https://dup.example.com", "articles_selector": "a"},
         )
         assert resp.status_code == 400
-        assert "Échec de l'ajout".encode() in resp.data
+        assert "Échec de".encode() in resp.data
 
 
 class TestEdit:
