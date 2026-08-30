@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}{{ "Nouveau flux" if mode == "new" else "Modifier le flux" }} — Scrap admin{% endblock %}
+{% block content %}
+  <h1>{{ "Nouveau flux scrap" if mode == "new" else "Modifier le flux" }}</h1>
+
+  {% set action = url_for('create') if mode == 'new' else url_for('update', repository_id=repository_id) %}
+  <form method="post" action="{{ action }}">
+    <label for="url">URL de la page listant les articles</label>
+    <input type="url" id="url" name="url" value="{{ values.url }}" placeholder="https://blog.example.com" required />
+
+    <label for="articles_selector">Sélecteur CSS des liens d'articles</label>
+    <input
+      type="text"
+      id="articles_selector"
+      name="articles_selector"
+      value="{{ values.articles_selector }}"
+      placeholder="h2.post-title a"
+      required
+    />
+
+    <label for="content_selector">Sélecteur CSS du corps de l'article <span class="muted">(défaut : body)</span></label>
+    <input
+      type="text"
+      id="content_selector"
+      name="content_selector"
+      value="{{ values.content_selector }}"
+      placeholder="article.post-content"
+    />
+
+    <label for="exclude">Sélecteurs à retirer avant extraction <span class="muted">(un par ligne, optionnel)</span></label>
+    <textarea id="exclude" name="exclude" placeholder="div.ads&#10;.sidebar">{{ values.exclude }}</textarea>
+
+    <label for="max_scraps">Articles max par passage <span class="muted">(défaut : 5)</span></label>
+    <input type="number" id="max_scraps" name="max_scraps" value="{{ values.max_scraps }}" min="1" />
+
+    <label for="retention_days">Rétention en jours <span class="muted">(défaut : 15)</span></label>
+    <input type="number" id="retention_days" name="retention_days" value="{{ values.retention_days }}" min="1" />
+
+    <div class="actions">
+      <button class="btn primary" type="submit">{{ "Ajouter" if mode == "new" else "Enregistrer" }}</button>
+      <a class="btn" href="{{ url_for('index') }}">Annuler</a>
+    </div>
+  </form>
+{% endblock %}

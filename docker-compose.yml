@@ -29,6 +29,28 @@ services:
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
 
+  admin:
+    build: .
+    entrypoint: ["gunicorn", "--bind", "0.0.0.0:8000", "admin:app"]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      SCRAP_ADMIN_EMAIL: ${SCRAP_ADMIN_EMAIL}
+      SCRAP_ADMIN_PASSWORD: ${SCRAP_ADMIN_PASSWORD}
+      SCRAP_ADMIN_SECRET: ${SCRAP_ADMIN_SECRET}
+    ports:
+      - "8000:8000"
+
   test:
     build: .
     entrypoint: ["python", "-m", "pytest", "tests/", "-v"]
