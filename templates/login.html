@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Connexion — Scrap admin{% endblock %}
+{% block content %}
+  <h1>Connexion</h1>
+  <form method="post" action="{{ url_for('login') }}">
+    <label for="email">E-mail</label>
+    <input type="text" id="email" name="email" autocomplete="username" autofocus />
+    <label for="password">Mot de passe</label>
+    <input type="password" id="password" name="password" autocomplete="current-password" />
+    <div class="actions">
+      <button class="btn primary" type="submit">Se connecter</button>
+    </div>
+  </form>
+{% endblock %}

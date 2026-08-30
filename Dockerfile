@@ -6,7 +6,8 @@ COPY requirements.txt requirements-dev.txt ./
 RUN pip install --no-cache-dir -r requirements-dev.txt
 
 COPY pyproject.toml .
-COPY scrape_pages.py .
+COPY scrape_pages.py admin.py ./
+COPY templates/ templates/
 COPY tests/ tests/
 
 ENTRYPOINT ["python", "scrape_pages.py"]

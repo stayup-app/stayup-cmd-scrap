@@ -75,9 +75,9 @@ cp .env.example .env
 
 docker compose up db -d
 
-# Add a blog to scrape
+# Add a blog to scrape (see "Web admin" below for a UI instead of raw SQL)
 docker compose exec db psql -U <DB_USER> -d <DB_NAME> -c \
-  "INSERT INTO profile (config) VALUES ('{\"page\": \"https://blog.example.com\", \"articles_selector\": \"h2 a\", \"content_selector\": \"article\"}');"
+  "INSERT INTO repository (url, type, config) VALUES ('https://blog.example.com', 'scrap', '{\"articles_selector\": \"h2 a\", \"content_selector\": \"article\"}');"
 
 # Run the scraper
 docker compose run --rm scrape_pages
@@ -91,13 +91,36 @@ export DATABASE_URL=postgresql://user:password@host:5432/dbname
 python scrape_pages.py
 ```
 
+## Web admin
+
+A small Flask page to add, edit and delete scrap fluxes without touching SQL.
+It reads and writes the same `repository` rows (`type = 'scrap'`) the scraper
+consumes, so run it against the same database.
+
+```bash
+# In .env, alongside the DB_* / DATABASE_URL settings:
+SCRAP_ADMIN_EMAIL=you@example.com
+SCRAP_ADMIN_PASSWORD=a-strong-password
+SCRAP_ADMIN_SECRET=a-long-random-string   # signs the session cookie
+
+docker compose up admin -d          # http://localhost:8000
+# or, without Docker:
+pip install -r requirements.txt
+gunicorn --bind 0.0.0.0:8000 admin:app
+```
+
+Auth is a single operator account from the environment — there is no sign-up.
+Deleting a flux also removes its scraped rows and logs; it is refused while a
+user is still subscribed to it (checked against the API's `user_repository`
+table when that table lives in the same database).
+
 ## GitHub Actions
 
 ### CI (`ci.yml`)
 
 Runs on every push and pull request to `main`:
 - Lint with **ruff** and **black**
-- Run unit + functional tests against a temporary PostgreSQL service
+- Run unit + functional tests (scraper and web admin) against a temporary PostgreSQL service
 
 ### Daily cron (`daily.yml`)
 

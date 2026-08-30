@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Flux — Scrap admin{% endblock %}
+{% block content %}
+  <div style="display: flex; align-items: center; justify-content: space-between;">
+    <h1>Flux scrap ({{ fluxes | length }})</h1>
+    <a class="btn primary" href="{{ url_for('new_form') }}">Ajouter un flux</a>
+  </div>
+
+  {% if not fluxes %}
+    <p class="muted">Aucun flux pour l'instant.</p>
+  {% else %}
+    <table>
+      <thead>
+        <tr>
+          <th>Page</th>
+          <th>Sélecteurs</th>
+          <th>Articles</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for flux in fluxes %}
+          <tr>
+            <td>
+              <a href="{{ flux.url }}" target="_blank" rel="noopener">{{ flux.url }}</a>
+            </td>
+            <td>
+              <code>{{ flux.config.get('articles_selector', '—') }}</code><br />
+              <code>{{ flux.config.get('content_selector', 'body') }}</code>
+              {% if flux.config.get('exclude') %}
+                <br /><span class="muted">exclut {{ flux.config['exclude'] | length }} sélecteur(s)</span>
+              {% endif %}
+            </td>
+            <td>{{ flux.articles }}</td>
+            <td>
+              <a class="btn" href="{{ url_for('edit_form', repository_id=flux.id) }}">Modifier</a>
+              <form
+                class="inline"
+                method="post"
+                action="{{ url_for('delete', repository_id=flux.id) }}"
+                onsubmit="return confirm('Supprimer ce flux et ses articles collectés ?');"
+              >
+                <button class="btn danger" type="submit">Supprimer</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+{% endblock %}
