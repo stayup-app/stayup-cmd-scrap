@@ -97,6 +97,12 @@ A small Flask page to add, edit and delete scrap fluxes without touching SQL.
 It reads and writes the same `repository` rows (`type = 'scrap'`) the scraper
 consumes, so run it against the same database.
 
+> Users can also request a scrap flux straight from the StayUp apps (just the
+> page URL). The provider's display template ships a `form` block for that, but
+> `scrap` is `flux_approval = manual`, so the request lands in the API's
+> approval queue — an admin approves it and fills in the CSS selectors before
+> the scraper picks it up.
+
 ```bash
 # In .env, alongside the DB_* / DATABASE_URL settings:
 SCRAP_ADMIN_EMAIL=you@example.com

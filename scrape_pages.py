@@ -101,7 +101,7 @@ DISPLAY_TEMPLATE = {
         },
         "accent": "#9dc7e0",
         "sortOrder": 40,
-        "feedLabel": {"path": "$source.url", "format": "hostname"},
+        "feedLabel": {"path": "$source.url", "format": "domain"},
     },
     "item": {
         "parseContentAsJson": False,
@@ -125,6 +125,15 @@ DISPLAY_TEMPLATE = {
         "body": "content",
         "openUrl": "$row.params.url",
         "openLabel": "Visit website",
+    },
+    # Champ « ajouter un flux » : l'URL complète de la page/section à suivre, comme
+    # pour rss. Le provider est en mode `manual` : l'ajout part en file
+    # d'approbation, où un admin renseigne les sélecteurs CSS (articles_selector…).
+    "form": {
+        "label": "Page URL to scrape",
+        "placeholder": "https://blog.example.com/",
+        "pattern": r"^https?://.+",
+        "transform": {"trim": True},
     },
 }
 
