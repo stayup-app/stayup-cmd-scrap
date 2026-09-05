@@ -14,7 +14,7 @@
         <tr>
           <th>Page</th>
           <th>Sélecteurs</th>
-          <th>Articles</th>
+          <th>Abonnés</th>
           <th></th>
         </tr>
       </thead>
@@ -31,7 +31,7 @@
                 <br /><span class="muted">exclut {{ flux.config['exclude'] | length }} sélecteur(s)</span>
               {% endif %}
             </td>
-            <td>{{ flux.articles }}</td>
+            <td>{{ flux.subscriber_count }}</td>
             <td>
               <a class="btn" href="{{ url_for('edit_form', repository_id=flux.id) }}">Modifier</a>
               <form

@@ -1,60 +1,40 @@
-"""
-Functional tests for the web admin — require a running PostgreSQL instance.
+"""Tests for the web admin. stayup-api itself is mocked (unittest.mock.patch
+on `requests.post`/`requests.request`) — its actual behavior (auth,
+/ui/repositories CRUD) is covered by stayup-api's own test suite."""
 
-Connection is configured via environment variables:
-  DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
-"""
+from unittest.mock import MagicMock, patch
 
-import json
-import os
-
-import psycopg2
 import pytest
+import requests
 
 from admin import create_app
-from scrape_pages import init_db
 
 ADMIN_EMAIL = "ops@example.com"
 ADMIN_PASSWORD = "s3cret-pass"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
 
-def make_conn():
-    try:
-        return psycopg2.connect(
-            host=os.environ.get("DB_HOST", "localhost"),
-            port=int(os.environ.get("DB_PORT", 5432)),
-            dbname=os.environ.get("DB_NAME", "stayup"),
-            user=os.environ.get("DB_USER", "stayup"),
-            password=os.environ.get("DB_PASSWORD", "stayup"),
-        )
-    except psycopg2.OperationalError as e:
-        pytest.skip(f"PostgreSQL unavailable: {e}")
+def mock_response(json_body=None, status=200):
+    response = MagicMock()
+    response.status_code = status
+    response.content = b"{}" if json_body is not None else b""
+    response.json.return_value = json_body
+
+    def raise_for_status():
+        if status >= 400:
+            error = requests.HTTPError(f"{status} error")
+            error.response = response
+            raise error
+
+    response.raise_for_status.side_effect = raise_for_status
+    return response
 
 
-@pytest.fixture(scope="session")
-def _schema():
-    """Create the tables once. Only DB-backed tests depend on this, so the
-    auth-only tests still run when no PostgreSQL is around."""
-    conn = make_conn()
-    init_db(conn)
-    conn.close()
-
-
-@pytest.fixture
-def db_conn(_schema):
-    conn = make_conn()
-    yield conn
-    conn.rollback()
-    with conn.cursor() as cur:
-        cur.execute("DROP TABLE IF EXISTS user_repository")
-        cur.execute("TRUNCATE connector_scrap, log, repository RESTART IDENTITY CASCADE")
-    conn.commit()
-    conn.close()
+def mock_login(mock_post):
+    mock_post.return_value = mock_response({"token": "test-token"})
 
 
 @pytest.fixture
@@ -62,6 +42,8 @@ def client(monkeypatch):
     monkeypatch.setenv("SCRAP_ADMIN_EMAIL", ADMIN_EMAIL)
     monkeypatch.setenv("SCRAP_ADMIN_PASSWORD", ADMIN_PASSWORD)
     monkeypatch.setenv("SCRAP_ADMIN_SECRET", "test-secret")
+    monkeypatch.setenv("STAYUP_API_ADMIN_EMAIL", "api-admin@example.com")
+    monkeypatch.setenv("STAYUP_API_ADMIN_PASSWORD", "api-secret")
     app = create_app()
     app.config.update(TESTING=True)
     return app.test_client()
@@ -74,30 +56,7 @@ def auth_client(client):
 
 
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def insert_flux(conn, url="https://blog.example.com", config=None, type="scrap"):
-    config = config or {"articles_selector": "h2 a", "content_selector": "article"}
-    with conn.cursor() as cur:
-        cur.execute(
-            "INSERT INTO repository (url, type, config) VALUES (%s, %s, %s) RETURNING id",
-            (url, type, json.dumps(config)),
-        )
-        flux_id = cur.fetchone()[0]
-    conn.commit()
-    return flux_id
-
-
-def read_flux(conn, flux_id):
-    with conn.cursor() as cur:
-        cur.execute("SELECT url, config FROM repository WHERE id = %s", (flux_id,))
-        return cur.fetchone()
-
-
-# ---------------------------------------------------------------------------
-# Auth
+# Auth (this app's own Flask session — no stayup-api call involved)
 # ---------------------------------------------------------------------------
 
 
@@ -118,15 +77,9 @@ class TestAuth:
         # An authenticated visitor to /login is bounced to the list.
         assert client.get("/login").status_code == 302
 
-    def test_authenticated_visitor_sees_the_list(self, auth_client, db_conn):
-        resp = auth_client.get("/")
-        assert resp.status_code == 200
-        assert b"Flux scrap" in resp.data
-
     def test_logout_clears_the_session(self, auth_client):
         auth_client.post("/logout")
-        resp = auth_client.get("/")
-        assert resp.status_code == 302
+        assert auth_client.get("/").status_code == 302
 
     def test_login_reports_a_missing_configuration(self, monkeypatch):
         monkeypatch.delenv("SCRAP_ADMIN_EMAIL", raising=False)
@@ -137,25 +90,73 @@ class TestAuth:
         assert resp.status_code == 401
         assert b"Admin non configur" in resp.data
 
+    def test_delete_requires_authentication(self, client):
+        resp = client.post("/1/delete")
+        assert resp.status_code == 302
+
 
 # ---------------------------------------------------------------------------
-# CRUD
+# List
 # ---------------------------------------------------------------------------
 
 
 class TestList:
-    def test_shows_a_seeded_flux(self, auth_client, db_conn):
-        insert_flux(db_conn, url="https://seeded.example.com")
+    @patch("admin.requests.request")
+    @patch("admin.requests.post")
+    def test_shows_a_flux_from_the_api(self, mock_post, mock_request, auth_client):
+        mock_login(mock_post)
+        mock_request.return_value = mock_response(
+            {
+                "repositories": [
+                    {
+                        "id": 1,
+                        "url": "https://seeded.example.com",
+                        "type": "scrap",
+                        "config": {},
+                        "subscriber_count": "0",
+                    }
+                ]
+            }
+        )
         resp = auth_client.get("/")
+        assert resp.status_code == 200
         assert b"https://seeded.example.com" in resp.data
 
-    def test_empty_state(self, auth_client, db_conn):
+    @patch("admin.requests.request")
+    @patch("admin.requests.post")
+    def test_filters_out_other_provider_types(self, mock_post, mock_request, auth_client):
+        mock_login(mock_post)
+        mock_request.return_value = mock_response(
+            {
+                "repositories": [
+                    {"id": 1, "url": "https://rss.example.com", "type": "rss", "config": {}, "subscriber_count": "0"},
+                ]
+            }
+        )
+        resp = auth_client.get("/")
+        assert b"https://rss.example.com" not in resp.data
+
+    @patch("admin.requests.request")
+    @patch("admin.requests.post")
+    def test_empty_state(self, mock_post, mock_request, auth_client):
+        mock_login(mock_post)
+        mock_request.return_value = mock_response({"repositories": []})
         resp = auth_client.get("/")
         assert b"Aucun flux" in resp.data
 
 
+# ---------------------------------------------------------------------------
+# Create
+# ---------------------------------------------------------------------------
+
+
 class TestCreate:
-    def test_inserts_a_scrap_repository(self, auth_client, db_conn):
+    @patch("admin.requests.request")
+    @patch("admin.requests.post")
+    def test_posts_the_url_and_config_to_the_api(self, mock_post, mock_request, auth_client):
+        mock_login(mock_post)
+        mock_request.return_value = mock_response({"id": 7, "url": "https://new.example.com"}, status=201)
+
         resp = auth_client.post(
             "/new",
             data={
@@ -166,122 +167,157 @@ class TestCreate:
                 "max_scraps": "9",
                 "retention_days": "30",
             },
-            follow_redirects=True,
         )
-        assert resp.status_code == 200
-        with db_conn.cursor() as cur:
-            cur.execute("SELECT url, type, config FROM repository")
-            url, type_, config = cur.fetchone()
-        assert (url, type_) == ("https://new.example.com", "scrap")
-        assert config == {
-            "articles_selector": "h2.title a",
-            "content_selector": "article.body",
-            "exclude": ["div.ads", ".sidebar"],
-            "max_scraps": 9,
-            "retention_days": 30,
+        # Redirige vers la liste sans la suivre : la suivre déclencherait un
+        # second appel (GET la liste), hors sujet de ce test.
+        assert resp.status_code == 302
+        method, url = mock_request.call_args[0]
+        assert method == "POST"
+        assert url.endswith("/ui/repositories")
+        body = mock_request.call_args.kwargs["json"]
+        assert body == {
+            "url": "https://new.example.com",
+            "type": "scrap",
+            "config": {
+                "articles_selector": "h2.title a",
+                "content_selector": "article.body",
+                "exclude": ["div.ads", ".sidebar"],
+                "max_scraps": 9,
+                "retention_days": 30,
+            },
         }
 
-    def test_omits_empty_optional_fields(self, auth_client, db_conn):
-        auth_client.post(
-            "/new",
-            data={"url": "https://min.example.com", "articles_selector": "a.post"},
-            follow_redirects=True,
-        )
-        with db_conn.cursor() as cur:
-            cur.execute("SELECT config FROM repository")
-            config = cur.fetchone()[0]
-        assert config == {"articles_selector": "a.post"}
-
-    def test_rejects_a_missing_articles_selector(self, auth_client, db_conn):
+    def test_rejects_a_missing_articles_selector(self, auth_client):
         resp = auth_client.post("/new", data={"url": "https://x.example.com"})
         assert resp.status_code == 400
         assert b"sont requis" in resp.data
-        with db_conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM repository")
-            assert cur.fetchone()[0] == 0
 
-    def test_surfaces_a_duplicate_url(self, auth_client, db_conn):
-        insert_flux(db_conn, url="https://dup.example.com")
+    @patch("admin.requests.request")
+    @patch("admin.requests.post")
+    def test_surfaces_an_api_error(self, mock_post, mock_request, auth_client):
+        mock_login(mock_post)
+        mock_request.return_value = mock_response(
+            {"error": "This URL is already registered under another provider"}, status=409
+        )
+
         resp = auth_client.post(
             "/new",
             data={"url": "https://dup.example.com", "articles_selector": "a"},
         )
         assert resp.status_code == 400
-        assert "Échec de".encode() in resp.data
+        assert b"already registered" in resp.data
+
+
+# ---------------------------------------------------------------------------
+# Edit
+# ---------------------------------------------------------------------------
 
 
 class TestEdit:
-    def test_updates_url_and_config(self, auth_client, db_conn):
-        flux_id = insert_flux(db_conn)
-        auth_client.post(
-            f"/{flux_id}/edit",
-            data={
-                "url": "https://moved.example.com",
-                "articles_selector": "a.new",
-                "content_selector": "main",
-            },
-            follow_redirects=True,
-        )
-        url, config = read_flux(db_conn, flux_id)
-        assert url == "https://moved.example.com"
-        assert config == {"articles_selector": "a.new", "content_selector": "main"}
+    @patch("admin.requests.request")
+    @patch("admin.requests.post")
+    def test_updates_url_and_config(self, mock_post, mock_request, auth_client):
+        # `update()` ne fait qu'un seul appel — PATCH directement, pas de
+        # lecture préalable — donc pas de `follow_redirects` ici : le suivre
+        # déclencherait un second appel (GET la liste), hors sujet.
+        mock_login(mock_post)
+        mock_request.return_value = mock_response({"success": True})
 
-    def test_edit_form_prefills_the_stored_values(self, auth_client, db_conn):
-        flux_id = insert_flux(db_conn, config={"articles_selector": "a.keep", "exclude": ["nav"]})
-        resp = auth_client.get(f"/{flux_id}/edit")
+        resp = auth_client.post(
+            "/3/edit",
+            data={"url": "https://moved.example.com", "articles_selector": "a.new", "content_selector": "main"},
+        )
+        assert resp.status_code == 302
+        method, url = mock_request.call_args[0]
+        assert method == "PATCH"
+        assert url.endswith("/ui/repositories/3")
+        body = mock_request.call_args.kwargs["json"]
+        assert body == {
+            "url": "https://moved.example.com",
+            "config": {"articles_selector": "a.new", "content_selector": "main"},
+        }
+
+    @patch("admin.requests.request")
+    @patch("admin.requests.post")
+    def test_edit_form_prefills_the_stored_values(self, mock_post, mock_request, auth_client):
+        mock_login(mock_post)
+        mock_request.return_value = mock_response(
+            {
+                "repositories": [
+                    {
+                        "id": 3,
+                        "url": "https://old.example.com",
+                        "type": "scrap",
+                        "config": {"articles_selector": "a.keep", "exclude": ["nav"]},
+                    }
+                ]
+            }
+        )
+        resp = auth_client.get("/3/edit")
         assert b"a.keep" in resp.data
         assert b"nav" in resp.data
 
-    def test_unknown_flux_redirects_with_a_notice(self, auth_client, db_conn):
+    @patch("admin.requests.request")
+    @patch("admin.requests.post")
+    def test_unknown_flux_redirects_with_a_notice(self, mock_post, mock_request, auth_client):
+        mock_login(mock_post)
+        mock_request.return_value = mock_response({"repositories": []})
         resp = auth_client.get("/999/edit", follow_redirects=True)
         assert b"Flux introuvable" in resp.data
 
 
+# ---------------------------------------------------------------------------
+# Delete
+# ---------------------------------------------------------------------------
+
+
 class TestDelete:
-    def test_removes_the_flux_its_content_and_logs(self, auth_client, db_conn):
-        flux_id = insert_flux(db_conn)
-        with db_conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO connector_scrap (repository_id, content, params, executed_at, success) "
-                "VALUES (%s, 'x', '{}', NOW(), TRUE)",
-                (flux_id,),
-            )
-            cur.execute(
-                "INSERT INTO log (repository_id, error, executed_at) VALUES (%s, 'boom', NOW())",
-                (flux_id,),
-            )
-        db_conn.commit()
+    @patch("admin.requests.request")
+    @patch("admin.requests.post")
+    def test_removes_the_flux_via_the_api(self, mock_post, mock_request, auth_client):
+        mock_login(mock_post)
+        mock_request.side_effect = [
+            mock_response(
+                {
+                    "repositories": [
+                        {
+                            "id": 4,
+                            "url": "https://x.example.com",
+                            "type": "scrap",
+                            "config": {},
+                            "subscriber_count": "0",
+                        }
+                    ]
+                }
+            ),
+            mock_response({"success": True}),
+        ]
 
-        auth_client.post(f"/{flux_id}/delete", follow_redirects=True)
+        # Pas de `follow_redirects` : le suivre déclencherait un 3e appel (GET
+        # la liste, pour la page vers laquelle on redirige), hors sujet.
+        auth_client.post("/4/delete")
 
-        with db_conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM repository WHERE id = %s", (flux_id,))
-            assert cur.fetchone()[0] == 0
-            cur.execute("SELECT COUNT(*) FROM connector_scrap WHERE repository_id = %s", (flux_id,))
-            assert cur.fetchone()[0] == 0
-            cur.execute("SELECT COUNT(*) FROM log WHERE repository_id = %s", (flux_id,))
-            assert cur.fetchone()[0] == 0
+        method, url = mock_request.call_args_list[1][0]
+        assert method == "DELETE"
+        assert url.endswith("/ui/repositories/4")
 
-    def test_is_blocked_when_a_user_follows_the_flux(self, auth_client, db_conn):
-        flux_id = insert_flux(db_conn)
-        with db_conn.cursor() as cur:
-            cur.execute("CREATE TABLE user_repository (id SERIAL PRIMARY KEY, user_id TEXT, repository_id INTEGER)")
-            cur.execute(
-                "INSERT INTO user_repository (user_id, repository_id) VALUES ('u1', %s)",
-                (flux_id,),
-            )
-        db_conn.commit()
+    @patch("admin.requests.request")
+    @patch("admin.requests.post")
+    def test_is_blocked_when_a_user_follows_the_flux(self, mock_post, mock_request, auth_client):
+        mock_login(mock_post)
+        mock_request.return_value = mock_response(
+            {
+                "repositories": [
+                    {"id": 4, "url": "https://x.example.com", "type": "scrap", "config": {}, "subscriber_count": "2"}
+                ]
+            }
+        )
 
-        resp = auth_client.post(f"/{flux_id}/delete", follow_redirects=True)
-        assert "Suppression refusée".encode() in resp.data
-        with db_conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM repository WHERE id = %s", (flux_id,))
-            assert cur.fetchone()[0] == 1
-
-    def test_delete_requires_authentication(self, client, db_conn):
-        flux_id = insert_flux(db_conn)
-        resp = client.post(f"/{flux_id}/delete")
-        assert resp.status_code == 302
-        with db_conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM repository WHERE id = %s", (flux_id,))
-            assert cur.fetchone()[0] == 1
+        # `follow_redirects` ici : le message flash ne s'affiche que sur la
+        # page suivante, qui refait donc son propre appel liste (2 appels
+        # liste au total, jamais de DELETE).
+        resp = auth_client.post("/4/delete", follow_redirects=True)
+        assert b"Suppression refus\xc3\xa9e" in resp.data
+        assert mock_request.call_count == 2
+        for call in mock_request.call_args_list:
+            assert call.args[0] == "GET"

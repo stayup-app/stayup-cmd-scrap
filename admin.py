@@ -2,15 +2,22 @@
 """
 Stayup scrap — small web admin to curate the scrap fluxes.
 
-Scrap fluxes are rows in the shared ``repository`` table with ``type = 'scrap'``
-and a JSON ``config`` (``articles_selector``, ``content_selector``, ``exclude``,
-``max_scraps``, ``retention_days``). They used to be added from the stayup-ui
-admin, which forced that app to know one connector's config shape. This page
-moves that job next to the scraper.
+Scrap fluxes are sources of type 'scrap' on a stayup-api instance, with a JSON
+config (``articles_selector``, ``content_selector``, ``exclude``, ``max_scraps``,
+``retention_days``). This page never touches a database directly — it calls
+stayup-api's general admin endpoints (``/ui/repositories``), the same ones the
+stayup-ui admin panel uses, as an admin account of that instance.
 
-Auth is a single operator account read from the environment:
-  SCRAP_ADMIN_EMAIL, SCRAP_ADMIN_PASSWORD   — the login
+Two separate credentials are involved:
+  SCRAP_ADMIN_EMAIL, SCRAP_ADMIN_PASSWORD   — gates who may open this page
+                                               (this app's own Flask session)
   SCRAP_ADMIN_SECRET                        — Flask session signing key
+  STAYUP_API_URL                            — the stayup-api instance to curate
+  STAYUP_API_ADMIN_EMAIL, STAYUP_API_ADMIN_PASSWORD
+                                             — the stayup-api admin account this
+                                               page authenticates as when it
+                                               calls /ui/repositories on the
+                                               operator's behalf
 
 Run it with gunicorn (see docker-compose.yml) or ``flask --app admin run``.
 """
@@ -18,18 +25,18 @@ Run it with gunicorn (see docker-compose.yml) or ``flask --app admin run``.
 from __future__ import annotations
 
 import hmac
-import json
 import os
 from functools import wraps
 
+import requests
 from flask import Flask, flash, redirect, render_template, request, session, url_for
-
-from scrape_pages import get_db_conn
 
 # Clés de config qu'on lit sur le formulaire. Une clé absente ou vide n'est pas
 # écrite : le scraper applique ses propres défauts (content_selector="body",
 # max_scraps=5, retention_days=15).
 INT_KEYS = ("max_scraps", "retention_days")
+
+API_URL = os.environ.get("STAYUP_API_URL", "http://localhost:3000").rstrip("/")
 
 
 def _admin_credentials() -> tuple[str, str] | None:
@@ -38,6 +45,61 @@ def _admin_credentials() -> tuple[str, str] | None:
     if not email or not password:
         return None
     return email, password
+
+
+def _api_admin_token() -> str:
+    """Log in to stayup-api as an admin. Fetched fresh on every call: this is a
+    low-traffic tool (an operator clicking through a few pages), so there is no
+    need for caching/refresh complexity around the token's 24h expiry."""
+    email = os.environ.get("STAYUP_API_ADMIN_EMAIL", "")
+    password = os.environ.get("STAYUP_API_ADMIN_PASSWORD", "")
+    if not email or not password:
+        raise RuntimeError("STAYUP_API_ADMIN_EMAIL / STAYUP_API_ADMIN_PASSWORD are not set.")
+    response = requests.post(f"{API_URL}/auth/login", json={"username": email, "password": password}, timeout=10)
+    response.raise_for_status()
+    return response.json()["token"]
+
+
+def api_request(method: str, path: str, **kwargs) -> dict | None:
+    """Call one of stayup-api's /ui/repositories/* endpoints, as an admin.
+    Raises requests.HTTPError on a non-2xx response — callers read
+    exc.response.json()["error"] for a message to show the operator."""
+    token = _api_admin_token()
+    url = f"{API_URL}/ui/repositories{path}"
+    headers = {"Authorization": f"Bearer {token}"}
+    response = requests.request(method, url, headers=headers, timeout=10, **kwargs)
+    response.raise_for_status()
+    return response.json() if response.content else None
+
+
+def _api_error_message(exc: requests.HTTPError) -> str:
+    """Extract stayup-api's {"error": "..."} body, falling back to str(exc)."""
+    try:
+        return exc.response.json().get("error", str(exc)) if exc.response is not None else str(exc)
+    except ValueError:
+        return str(exc)
+
+
+def list_scrap_fluxes() -> list[dict]:
+    """All sources of type 'scrap', as this page's `fluxes` shape."""
+    result = api_request("GET", "")
+    return [
+        {
+            "id": r["id"],
+            "url": r["url"],
+            "config": r.get("config") or {},
+            "subscriber_count": int(r.get("subscriber_count") or 0),
+        }
+        for r in result["repositories"]
+        if r["type"] == "scrap"
+    ]
+
+
+def get_scrap_flux(repository_id: int) -> dict | None:
+    for flux in list_scrap_fluxes():
+        if flux["id"] == repository_id:
+            return flux
+    return None
 
 
 def _parse_config(form) -> dict:
@@ -76,18 +138,6 @@ def _config_to_form(config: dict) -> dict:
         "max_scraps": config.get("max_scraps", ""),
         "retention_days": config.get("retention_days", ""),
     }
-
-
-def _subscriber_count(cur, repository_id: int) -> int:
-    """How many users follow this flux. 0 when the API's table isn't in this DB."""
-    cur.execute("SELECT to_regclass('public.user_repository')")
-    if cur.fetchone()[0] is None:
-        return 0
-    cur.execute(
-        "SELECT COUNT(*) FROM user_repository WHERE repository_id = %s",
-        (repository_id,),
-    )
-    return cur.fetchone()[0]
 
 
 def create_app() -> Flask:
@@ -133,29 +183,7 @@ def create_app() -> Flask:
     @app.get("/")
     @login_required
     def index():
-        conn = get_db_conn()
-        try:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT r.id, r.url, r.config, r.created_at,
-                           (SELECT COUNT(*) FROM connector_scrap cs WHERE cs.repository_id = r.id)
-                    FROM repository r
-                    WHERE r.type = 'scrap'
-                    ORDER BY r.id
-                    """)
-                rows = cur.fetchall()
-        finally:
-            conn.close()
-        fluxes = [
-            {
-                "id": row[0],
-                "url": row[1],
-                "config": row[2] if isinstance(row[2], dict) else json.loads(row[2] or "{}"),
-                "created_at": row[3],
-                "articles": row[4],
-            }
-            for row in rows
-        ]
+        fluxes = list_scrap_fluxes()
         return render_template("list.html", fluxes=fluxes)
 
     @app.get("/new")
@@ -172,41 +200,22 @@ def create_app() -> Flask:
         if not url or "articles_selector" not in config:
             flash("L'URL et le sélecteur d'articles sont requis.")
             return render_template("form.html", mode="new", values=values), 400
-        conn = get_db_conn()
         try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO repository (url, type, config) VALUES (%s, 'scrap', %s)",
-                    (url, json.dumps(config)),
-                )
-            conn.commit()
-        except Exception as exc:  # noqa: BLE001 — surfaced to the operator, not swallowed
-            conn.rollback()
-            flash(f"Échec de l'ajout : {exc}")
+            api_request("POST", "", json={"url": url, "type": "scrap", "config": config})
+        except requests.HTTPError as exc:
+            flash(f"Échec de l'ajout : {_api_error_message(exc)}")
             return render_template("form.html", mode="new", values=values), 400
-        finally:
-            conn.close()
         flash("Flux ajouté.")
         return redirect(url_for("index"))
 
     @app.get("/<int:repository_id>/edit")
     @login_required
     def edit_form(repository_id: int):
-        conn = get_db_conn()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT url, config FROM repository WHERE id = %s AND type = 'scrap'",
-                    (repository_id,),
-                )
-                row = cur.fetchone()
-        finally:
-            conn.close()
-        if row is None:
+        flux = get_scrap_flux(repository_id)
+        if flux is None:
             flash("Flux introuvable.")
             return redirect(url_for("index"))
-        config = row[1] if isinstance(row[1], dict) else json.loads(row[1] or "{}")
-        values = {"url": row[0], **_config_to_form(config)}
+        values = {"url": flux["url"], **_config_to_form(flux["config"])}
         return render_template("form.html", mode="edit", repository_id=repository_id, values=values)
 
     @app.post("/<int:repository_id>/edit")
@@ -218,43 +227,38 @@ def create_app() -> Flask:
         if not url or "articles_selector" not in config:
             flash("L'URL et le sélecteur d'articles sont requis.")
             return render_template("form.html", mode="edit", repository_id=repository_id, values=values), 400
-        conn = get_db_conn()
         try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE repository SET url = %s, config = %s WHERE id = %s AND type = 'scrap'",
-                    (url, json.dumps(config), repository_id),
-                )
-                missing = cur.rowcount == 0
-            conn.commit()
-        except Exception as exc:  # noqa: BLE001
-            conn.rollback()
-            flash(f"Échec de la modification : {exc}")
+            api_request(
+                "PATCH",
+                f"/{repository_id}",
+                json={"url": url, "config": config},
+            )
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else 400
+            if status == 404:
+                flash("Flux introuvable.")
+                return redirect(url_for("index"))
+            flash(f"Échec de la modification : {_api_error_message(exc)}")
             return render_template("form.html", mode="edit", repository_id=repository_id, values=values), 400
-        finally:
-            conn.close()
-        flash("Flux introuvable." if missing else "Flux modifié.")
+        flash("Flux modifié.")
         return redirect(url_for("index"))
 
     @app.post("/<int:repository_id>/delete")
     @login_required
     def delete(repository_id: int):
-        conn = get_db_conn()
+        flux = get_scrap_flux(repository_id)
+        if flux is None:
+            flash("Flux introuvable.")
+            return redirect(url_for("index"))
+        if flux["subscriber_count"]:
+            flash(f"Suppression refusée : {flux['subscriber_count']} abonné(s) suivent ce flux.")
+            return redirect(url_for("index"))
         try:
-            with conn.cursor() as cur:
-                followers = _subscriber_count(cur, repository_id)
-                if followers:
-                    conn.rollback()
-                    flash(f"Suppression refusée : {followers} abonné(s) suivent ce flux.")
-                    return redirect(url_for("index"))
-                cur.execute("DELETE FROM connector_scrap WHERE repository_id = %s", (repository_id,))
-                cur.execute("DELETE FROM log WHERE repository_id = %s", (repository_id,))
-                cur.execute("DELETE FROM repository WHERE id = %s AND type = 'scrap'", (repository_id,))
-                missing = cur.rowcount == 0
-            conn.commit()
-        finally:
-            conn.close()
-        flash("Flux introuvable." if missing else "Flux supprimé.")
+            api_request("DELETE", f"/{repository_id}")
+        except requests.HTTPError as exc:
+            flash(f"Échec de la suppression : {_api_error_message(exc)}")
+            return redirect(url_for("index"))
+        flash("Flux supprimé.")
         return redirect(url_for("index"))
 
     return app
