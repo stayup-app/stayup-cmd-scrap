@@ -21,5 +21,6 @@ jobs:
 
       - name: Run scrape
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          STAYUP_API_URL: ${{ secrets.STAYUP_API_URL }}
+          STAYUP_API_KEY: ${{ secrets.STAYUP_API_KEY }}
         run: python scrape_pages.py
