@@ -6,18 +6,18 @@ Scrap fluxes are sources of type 'scrap' on a stayup-api instance, with a JSON
 config (``articles_selector``, ``content_selector``, ``exclude``, ``max_scraps``,
 ``retention_days``). This page never touches a database directly — it calls
 stayup-api's general admin endpoints (``/ui/repositories``), the same ones the
-stayup-ui admin panel uses, as an admin account of that instance.
+stayup-ui admin panel uses, authenticated with the connector's own API key
+(scoped to provider "scrap" — it can only see/manage repositories of that
+type, never another provider's).
 
 Two separate credentials are involved:
   SCRAP_ADMIN_EMAIL, SCRAP_ADMIN_PASSWORD   — gates who may open this page
                                                (this app's own Flask session)
   SCRAP_ADMIN_SECRET                        — Flask session signing key
-  STAYUP_API_URL                            — the stayup-api instance to curate
-  STAYUP_API_ADMIN_EMAIL, STAYUP_API_ADMIN_PASSWORD
-                                             — the stayup-api admin account this
-                                               page authenticates as when it
-                                               calls /ui/repositories on the
-                                               operator's behalf
+  STAYUP_API_URL, STAYUP_API_KEY            — the stayup-api instance to curate
+                                               and the connector key this page
+                                               authenticates with (the same key
+                                               scrape_pages.py uses)
 
 Run it with gunicorn (see docker-compose.yml) or ``flask --app admin run``.
 """
@@ -47,26 +47,16 @@ def _admin_credentials() -> tuple[str, str] | None:
     return email, password
 
 
-def _api_admin_token() -> str:
-    """Log in to stayup-api as an admin. Fetched fresh on every call: this is a
-    low-traffic tool (an operator clicking through a few pages), so there is no
-    need for caching/refresh complexity around the token's 24h expiry."""
-    email = os.environ.get("STAYUP_API_ADMIN_EMAIL", "")
-    password = os.environ.get("STAYUP_API_ADMIN_PASSWORD", "")
-    if not email or not password:
-        raise RuntimeError("STAYUP_API_ADMIN_EMAIL / STAYUP_API_ADMIN_PASSWORD are not set.")
-    response = requests.post(f"{API_URL}/auth/login", json={"username": email, "password": password}, timeout=10)
-    response.raise_for_status()
-    return response.json()["token"]
-
-
 def api_request(method: str, path: str, **kwargs) -> dict | None:
-    """Call one of stayup-api's /ui/repositories/* endpoints, as an admin.
-    Raises requests.HTTPError on a non-2xx response — callers read
+    """Call one of stayup-api's /ui/repositories/* endpoints, scoped to this
+    connector's own provider (scrap) by its API key. Raises
+    requests.HTTPError on a non-2xx response — callers read
     exc.response.json()["error"] for a message to show the operator."""
-    token = _api_admin_token()
+    api_key = os.environ.get("STAYUP_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("STAYUP_API_KEY is not set.")
     url = f"{API_URL}/ui/repositories{path}"
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {"Authorization": f"Bearer {api_key}"}
     response = requests.request(method, url, headers=headers, timeout=10, **kwargs)
     response.raise_for_status()
     return response.json() if response.content else None
