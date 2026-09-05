@@ -40,8 +40,7 @@ Each scraped article is stored with:
 
 - Python 3.13, or [Docker](https://www.docker.com/)
 - A `stayup-api` instance (the public one, or your own — see [self-hosting-and-providers.md](https://github.com/stayup-app/stayup-api/blob/main/docs/self-hosting-and-providers.md))
-- An API key for the `scrap` provider, created from that instance's admin panel (Connector keys → New key, provider `scrap`). The key is shown once — copy it right away.
-- An admin account on that instance (`npm run create-admin` in `stayup-api`), for `admin.py` — see below.
+- An API key for the `scrap` provider, created from that instance's admin panel (Connector keys → New key, provider `scrap`). The key is shown once — copy it right away. It is used by both the scraper and `admin.py` (see below) — no separate admin account needed.
 
 ## Setup
 
@@ -51,9 +50,9 @@ cd stayup-cmd-scrap
 cp .env.example .env
 ```
 
-Fill in `STAYUP_API_URL` / `STAYUP_API_KEY` (for the scraper), and
-`STAYUP_API_ADMIN_EMAIL` / `STAYUP_API_ADMIN_PASSWORD` plus the `SCRAP_ADMIN_*`
-trio (for the web admin — see below).
+Fill in `STAYUP_API_URL` / `STAYUP_API_KEY` (used by both the scraper and the
+web admin — see below), and the `SCRAP_ADMIN_*` trio if you're running the
+web admin.
 
 ```bash
 docker compose run --rm scrape_pages
@@ -73,8 +72,10 @@ STAYUP_API_URL=... STAYUP_API_KEY=... python scrape_pages.py
 
 A small Flask page to add, edit and delete scrap fluxes without touching the
 API by hand. It calls `stayup-api`'s general admin endpoints
-(`/ui/repositories`) — the same ones the stayup-ui admin panel uses — as an
-admin account of that instance.
+(`/ui/repositories`) — the same ones the stayup-ui admin panel uses —
+authenticated with the same `STAYUP_API_KEY` as the scraper: a connector key
+scoped to `scrap` can manage repositories of that type there too, so no
+separate admin account is needed.
 
 > Users can also request a scrap flux straight from the StayUp apps (just the
 > page URL). The provider's display template ships a `form` block for that, but
@@ -87,8 +88,6 @@ admin account of that instance.
 SCRAP_ADMIN_EMAIL=you@example.com
 SCRAP_ADMIN_PASSWORD=a-strong-password
 SCRAP_ADMIN_SECRET=a-long-random-string        # signs the session cookie
-STAYUP_API_ADMIN_EMAIL=admin@example.com       # a real stayup-api admin account
-STAYUP_API_ADMIN_PASSWORD=...
 
 docker compose up admin -d          # http://localhost:8000
 # or, without Docker:
@@ -97,9 +96,9 @@ gunicorn --bind 0.0.0.0:8000 admin:app
 ```
 
 Auth to this page is a single operator account from the environment — there is
-no sign-up. It is a separate credential from `STAYUP_API_ADMIN_*`: the former
+no sign-up. It is a separate credential from `STAYUP_API_KEY`: the former
 gates who may open this page, the latter is what the page uses to talk to
-`stayup-api` on the operator's behalf (a fresh token is fetched per action).
+`stayup-api` on the operator's behalf.
 
 Deleting a flux is refused while a user is still subscribed to it (checked via
 `stayup-api`'s subscriber count for that source).

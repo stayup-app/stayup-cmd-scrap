@@ -1,6 +1,6 @@
 """Tests for the web admin. stayup-api itself is mocked (unittest.mock.patch
-on `requests.post`/`requests.request`) — its actual behavior (auth,
-/ui/repositories CRUD) is covered by stayup-api's own test suite."""
+on `requests.request`) — its actual behavior (auth, /ui/repositories CRUD,
+provider scoping) is covered by stayup-api's own test suite."""
 
 from unittest.mock import MagicMock, patch
 
@@ -33,17 +33,12 @@ def mock_response(json_body=None, status=200):
     return response
 
 
-def mock_login(mock_post):
-    mock_post.return_value = mock_response({"token": "test-token"})
-
-
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("SCRAP_ADMIN_EMAIL", ADMIN_EMAIL)
     monkeypatch.setenv("SCRAP_ADMIN_PASSWORD", ADMIN_PASSWORD)
     monkeypatch.setenv("SCRAP_ADMIN_SECRET", "test-secret")
-    monkeypatch.setenv("STAYUP_API_ADMIN_EMAIL", "api-admin@example.com")
-    monkeypatch.setenv("STAYUP_API_ADMIN_PASSWORD", "api-secret")
+    monkeypatch.setenv("STAYUP_API_KEY", "stayup_conn_test-key")
     app = create_app()
     app.config.update(TESTING=True)
     return app.test_client()
@@ -102,9 +97,7 @@ class TestAuth:
 
 class TestList:
     @patch("admin.requests.request")
-    @patch("admin.requests.post")
-    def test_shows_a_flux_from_the_api(self, mock_post, mock_request, auth_client):
-        mock_login(mock_post)
+    def test_shows_a_flux_from_the_api(self, mock_request, auth_client):
         mock_request.return_value = mock_response(
             {
                 "repositories": [
@@ -121,11 +114,14 @@ class TestList:
         resp = auth_client.get("/")
         assert resp.status_code == 200
         assert b"https://seeded.example.com" in resp.data
+        headers = mock_request.call_args.kwargs["headers"]
+        assert headers["Authorization"] == "Bearer stayup_conn_test-key"
 
     @patch("admin.requests.request")
-    @patch("admin.requests.post")
-    def test_filters_out_other_provider_types(self, mock_post, mock_request, auth_client):
-        mock_login(mock_post)
+    def test_filters_out_other_provider_types(self, mock_request, auth_client):
+        # Défense en profondeur côté client : la clé est déjà scopée par
+        # l'API elle-même (elle ne renvoie que le provider "scrap"), mais le
+        # filtre reste correct si jamais un autre type apparaissait ici.
         mock_request.return_value = mock_response(
             {
                 "repositories": [
@@ -137,9 +133,7 @@ class TestList:
         assert b"https://rss.example.com" not in resp.data
 
     @patch("admin.requests.request")
-    @patch("admin.requests.post")
-    def test_empty_state(self, mock_post, mock_request, auth_client):
-        mock_login(mock_post)
+    def test_empty_state(self, mock_request, auth_client):
         mock_request.return_value = mock_response({"repositories": []})
         resp = auth_client.get("/")
         assert b"Aucun flux" in resp.data
@@ -152,9 +146,7 @@ class TestList:
 
 class TestCreate:
     @patch("admin.requests.request")
-    @patch("admin.requests.post")
-    def test_posts_the_url_and_config_to_the_api(self, mock_post, mock_request, auth_client):
-        mock_login(mock_post)
+    def test_posts_the_url_and_config_to_the_api(self, mock_request, auth_client):
         mock_request.return_value = mock_response({"id": 7, "url": "https://new.example.com"}, status=201)
 
         resp = auth_client.post(
@@ -193,9 +185,7 @@ class TestCreate:
         assert b"sont requis" in resp.data
 
     @patch("admin.requests.request")
-    @patch("admin.requests.post")
-    def test_surfaces_an_api_error(self, mock_post, mock_request, auth_client):
-        mock_login(mock_post)
+    def test_surfaces_an_api_error(self, mock_request, auth_client):
         mock_request.return_value = mock_response(
             {"error": "This URL is already registered under another provider"}, status=409
         )
@@ -215,12 +205,10 @@ class TestCreate:
 
 class TestEdit:
     @patch("admin.requests.request")
-    @patch("admin.requests.post")
-    def test_updates_url_and_config(self, mock_post, mock_request, auth_client):
+    def test_updates_url_and_config(self, mock_request, auth_client):
         # `update()` ne fait qu'un seul appel — PATCH directement, pas de
         # lecture préalable — donc pas de `follow_redirects` ici : le suivre
         # déclencherait un second appel (GET la liste), hors sujet.
-        mock_login(mock_post)
         mock_request.return_value = mock_response({"success": True})
 
         resp = auth_client.post(
@@ -238,9 +226,7 @@ class TestEdit:
         }
 
     @patch("admin.requests.request")
-    @patch("admin.requests.post")
-    def test_edit_form_prefills_the_stored_values(self, mock_post, mock_request, auth_client):
-        mock_login(mock_post)
+    def test_edit_form_prefills_the_stored_values(self, mock_request, auth_client):
         mock_request.return_value = mock_response(
             {
                 "repositories": [
@@ -258,9 +244,7 @@ class TestEdit:
         assert b"nav" in resp.data
 
     @patch("admin.requests.request")
-    @patch("admin.requests.post")
-    def test_unknown_flux_redirects_with_a_notice(self, mock_post, mock_request, auth_client):
-        mock_login(mock_post)
+    def test_unknown_flux_redirects_with_a_notice(self, mock_request, auth_client):
         mock_request.return_value = mock_response({"repositories": []})
         resp = auth_client.get("/999/edit", follow_redirects=True)
         assert b"Flux introuvable" in resp.data
@@ -273,9 +257,7 @@ class TestEdit:
 
 class TestDelete:
     @patch("admin.requests.request")
-    @patch("admin.requests.post")
-    def test_removes_the_flux_via_the_api(self, mock_post, mock_request, auth_client):
-        mock_login(mock_post)
+    def test_removes_the_flux_via_the_api(self, mock_request, auth_client):
         mock_request.side_effect = [
             mock_response(
                 {
@@ -302,9 +284,7 @@ class TestDelete:
         assert url.endswith("/ui/repositories/4")
 
     @patch("admin.requests.request")
-    @patch("admin.requests.post")
-    def test_is_blocked_when_a_user_follows_the_flux(self, mock_post, mock_request, auth_client):
-        mock_login(mock_post)
+    def test_is_blocked_when_a_user_follows_the_flux(self, mock_request, auth_client):
         mock_request.return_value = mock_response(
             {
                 "repositories": [
