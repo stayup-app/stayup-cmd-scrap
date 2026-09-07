@@ -33,9 +33,6 @@
     <label for="max_scraps">Articles max par passage <span class="muted">(défaut : 5)</span></label>
     <input type="number" id="max_scraps" name="max_scraps" value="{{ values.max_scraps }}" min="1" />
 
-    <label for="retention_days">Rétention en jours <span class="muted">(défaut : 15)</span></label>
-    <input type="number" id="retention_days" name="retention_days" value="{{ values.retention_days }}" min="1" />
-
     <div class="actions">
       <button class="btn primary" type="submit">{{ "Ajouter" if mode == "new" else "Enregistrer" }}</button>
       <a class="btn" href="{{ url_for('index') }}">Annuler</a>

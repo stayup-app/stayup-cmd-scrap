@@ -10,7 +10,6 @@ import pytest
 
 from scrape_pages import (
     DISPLAY_TEMPLATE,
-    cleanup_old_entries,
     get_article_links,
     get_scraped_urls,
     get_sources,
@@ -117,18 +116,6 @@ class TestSaveError:
         mock_request.return_value = mock_response({"success": True})
         save_error(None, "error", datetime.now(tz=timezone.utc))
         assert mock_request.call_args.kwargs["json"]["repositoryId"] is None
-
-
-@patch("scrape_pages.API_KEY", "test-key")
-class TestCleanupOldEntries:
-    @patch("scrape_pages.requests.request")
-    def test_sends_retention_days_as_a_query_param(self, mock_request):
-        mock_request.return_value = mock_response({"success": True})
-        cleanup_old_entries(7, 30)
-        method, url = mock_request.call_args[0]
-        assert method == "DELETE"
-        assert url.endswith("/connector-api/scrap/sources/7/old-items")
-        assert mock_request.call_args.kwargs["params"] == {"retentionDays": 30}
 
 
 class TestDisplayTemplate:

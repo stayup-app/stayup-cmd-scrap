@@ -9,8 +9,6 @@ article URLs:
   - Otherwise: saves new articles (newest first) until a known article is found,
     up to config["max_scraps"] (default 5) articles per run.
 
-A cleanup step removes entries older than config["retention_days"] (default 15) days.
-
 Talks to stayup-api over HTTP (STAYUP_API_URL + STAYUP_API_KEY) — it never
 touches a database directly. See stayup-api/docs/self-hosting-and-providers.md.
 Sources themselves (URL + selectors) are curated separately, via admin.py —
@@ -45,7 +43,6 @@ DISPLAY_NAME = "Scrap"
 SORT_ORDER = 40
 
 DEFAULT_MAX_SCRAPS = 5
-DEFAULT_RETENTION_DAYS = 15
 
 # Instance stayup-api à laquelle parler, et la clé qui authentifie ce
 # connecteur pour le provider 'scrap' — obtenue depuis l'admin de cette
@@ -192,15 +189,6 @@ def save_error(repository_id: int | None, error: str, executed_at: datetime) -> 
     )
 
 
-def cleanup_old_entries(repository_id: int, retention_days: int) -> None:
-    """Delete stored entries for a source older than retention_days days."""
-    api_request(
-        "DELETE",
-        f"/sources/{repository_id}/old-items",
-        params={"retentionDays": retention_days},
-    )
-
-
 # ---------------------------------------------------------------------------
 # Scraping
 # ---------------------------------------------------------------------------
@@ -327,7 +315,6 @@ def main() -> None:
 
     for repository_id, repository_url, config in sources:
         process_repository(repository_id, repository_url, executed_at, config)
-        cleanup_old_entries(repository_id, config.get("retention_days", DEFAULT_RETENTION_DAYS))
 
 
 if __name__ == "__main__":

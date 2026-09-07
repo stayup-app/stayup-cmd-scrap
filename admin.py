@@ -3,8 +3,8 @@
 Stayup scrap — small web admin to curate the scrap fluxes.
 
 Scrap fluxes are sources of type 'scrap' on a stayup-api instance, with a JSON
-config (``articles_selector``, ``content_selector``, ``exclude``, ``max_scraps``,
-``retention_days``). This page never touches a database directly — it calls
+config (``articles_selector``, ``content_selector``, ``exclude``, ``max_scraps``).
+This page never touches a database directly — it calls
 stayup-api's general admin endpoints (``/ui/repositories``), the same ones the
 stayup-ui admin panel uses, authenticated with the connector's own API key
 (scoped to provider "scrap" — it can only see/manage repositories of that
@@ -33,8 +33,8 @@ from flask import Flask, flash, redirect, render_template, request, session, url
 
 # Clés de config qu'on lit sur le formulaire. Une clé absente ou vide n'est pas
 # écrite : le scraper applique ses propres défauts (content_selector="body",
-# max_scraps=5, retention_days=15).
-INT_KEYS = ("max_scraps", "retention_days")
+# max_scraps=5).
+INT_KEYS = ("max_scraps",)
 
 API_URL = os.environ.get("STAYUP_API_URL", "http://localhost:3000").rstrip("/")
 
@@ -126,7 +126,6 @@ def _config_to_form(config: dict) -> dict:
         "content_selector": config.get("content_selector", ""),
         "exclude": "\n".join(config.get("exclude", [])),
         "max_scraps": config.get("max_scraps", ""),
-        "retention_days": config.get("retention_days", ""),
     }
 
 

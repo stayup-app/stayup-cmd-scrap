@@ -30,7 +30,6 @@ Each source's config:
 | `content_selector`    | no       | CSS selector for article body (default: `"body"`)            |
 | `exclude`             | no       | CSS selectors removed from the body before extracting text   |
 | `max_scraps`          | no       | Max articles scraped per run (default: `5`)                  |
-| `retention_days`      | no       | How long a scraped article is kept (default: `15`)           |
 
 Each scraped article is stored with:
 - `content` — extracted text

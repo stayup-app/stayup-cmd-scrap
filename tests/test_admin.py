@@ -157,7 +157,6 @@ class TestCreate:
                 "content_selector": "article.body",
                 "exclude": "div.ads\n.sidebar",
                 "max_scraps": "9",
-                "retention_days": "30",
             },
         )
         # Redirige vers la liste sans la suivre : la suivre déclencherait un
@@ -175,7 +174,6 @@ class TestCreate:
                 "content_selector": "article.body",
                 "exclude": ["div.ads", ".sidebar"],
                 "max_scraps": 9,
-                "retention_days": 30,
             },
         }
 
