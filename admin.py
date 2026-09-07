@@ -31,9 +31,8 @@ from functools import wraps
 import requests
 from flask import Flask, flash, redirect, render_template, request, session, url_for
 
-# Clés de config qu'on lit sur le formulaire. Une clé absente ou vide n'est pas
-# écrite : le scraper applique ses propres défauts (content_selector="body",
-# max_scraps=5).
+# Config keys read from the form. A missing or empty key is not written: the
+# scraper applies its own defaults (content_selector="body", max_scraps=5).
 INT_KEYS = ("max_scraps",)
 
 API_URL = os.environ.get("STAYUP_API_URL", "http://localhost:3000").rstrip("/")
@@ -156,9 +155,9 @@ def create_app() -> Flask:
         ok = creds is not None and hmac.compare_digest(email, creds[0]) and hmac.compare_digest(password, creds[1])
         if not ok:
             flash(
-                "Identifiants invalides."
+                "Invalid credentials."
                 if creds
-                else "Admin non configuré (SCRAP_ADMIN_EMAIL / SCRAP_ADMIN_PASSWORD)."
+                else "Admin not configured (SCRAP_ADMIN_EMAIL / SCRAP_ADMIN_PASSWORD)."
             )
             return render_template("login.html"), 401
         session["user"] = email
@@ -187,14 +186,14 @@ def create_app() -> Flask:
         config = _parse_config(request.form)
         values = {"url": url, **_config_to_form(config)}
         if not url or "articles_selector" not in config:
-            flash("L'URL et le sélecteur d'articles sont requis.")
+            flash("The URL and the articles selector are required.")
             return render_template("form.html", mode="new", values=values), 400
         try:
             api_request("POST", "", json={"url": url, "type": "scrap", "config": config})
         except requests.HTTPError as exc:
-            flash(f"Échec de l'ajout : {_api_error_message(exc)}")
+            flash(f"Add failed: {_api_error_message(exc)}")
             return render_template("form.html", mode="new", values=values), 400
-        flash("Flux ajouté.")
+        flash("Flux added.")
         return redirect(url_for("index"))
 
     @app.get("/<int:repository_id>/edit")
@@ -214,7 +213,7 @@ def create_app() -> Flask:
         config = _parse_config(request.form)
         values = {"url": url, **_config_to_form(config)}
         if not url or "articles_selector" not in config:
-            flash("L'URL et le sélecteur d'articles sont requis.")
+            flash("The URL and the articles selector are required.")
             return render_template("form.html", mode="edit", repository_id=repository_id, values=values), 400
         try:
             api_request(
@@ -225,11 +224,11 @@ def create_app() -> Flask:
         except requests.HTTPError as exc:
             status = exc.response.status_code if exc.response is not None else 400
             if status == 404:
-                flash("Flux introuvable.")
+                flash("Flux not found.")
                 return redirect(url_for("index"))
-            flash(f"Échec de la modification : {_api_error_message(exc)}")
+            flash(f"Update failed: {_api_error_message(exc)}")
             return render_template("form.html", mode="edit", repository_id=repository_id, values=values), 400
-        flash("Flux modifié.")
+        flash("Flux updated.")
         return redirect(url_for("index"))
 
     @app.post("/<int:repository_id>/delete")
@@ -237,17 +236,17 @@ def create_app() -> Flask:
     def delete(repository_id: int):
         flux = get_scrap_flux(repository_id)
         if flux is None:
-            flash("Flux introuvable.")
+            flash("Flux not found.")
             return redirect(url_for("index"))
         if flux["subscriber_count"]:
-            flash(f"Suppression refusée : {flux['subscriber_count']} abonné(s) suivent ce flux.")
+            flash(f"Deletion refused: {flux['subscriber_count']} subscriber(s) follow this flux.")
             return redirect(url_for("index"))
         try:
             api_request("DELETE", f"/{repository_id}")
         except requests.HTTPError as exc:
-            flash(f"Échec de la suppression : {_api_error_message(exc)}")
+            flash(f"Deletion failed: {_api_error_message(exc)}")
             return redirect(url_for("index"))
-        flash("Flux supprimé.")
+        flash("Flux deleted.")
         return redirect(url_for("index"))
 
     return app

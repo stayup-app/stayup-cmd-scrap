@@ -1,14 +1,14 @@
 {% extends "base.html" %}
-{% block title %}{{ "Nouveau flux" if mode == "new" else "Modifier le flux" }} — Scrap admin{% endblock %}
+{% block title %}{{ "New flux" if mode == "new" else "Edit flux" }} — Scrap admin{% endblock %}
 {% block content %}
-  <h1>{{ "Nouveau flux scrap" if mode == "new" else "Modifier le flux" }}</h1>
+  <h1>{{ "New scrap flux" if mode == "new" else "Edit flux" }}</h1>
 
   {% set action = url_for('create') if mode == 'new' else url_for('update', repository_id=repository_id) %}
   <form method="post" action="{{ action }}">
-    <label for="url">URL de la page listant les articles</label>
+    <label for="url">URL of the page listing the articles</label>
     <input type="url" id="url" name="url" value="{{ values.url }}" placeholder="https://blog.example.com" required />
 
-    <label for="articles_selector">Sélecteur CSS des liens d'articles</label>
+    <label for="articles_selector">CSS selector for article links</label>
     <input
       type="text"
       id="articles_selector"
@@ -18,7 +18,7 @@
       required
     />
 
-    <label for="content_selector">Sélecteur CSS du corps de l'article <span class="muted">(défaut : body)</span></label>
+    <label for="content_selector">CSS selector for the article body <span class="muted">(default: body)</span></label>
     <input
       type="text"
       id="content_selector"
@@ -27,15 +27,15 @@
       placeholder="article.post-content"
     />
 
-    <label for="exclude">Sélecteurs à retirer avant extraction <span class="muted">(un par ligne, optionnel)</span></label>
+    <label for="exclude">Selectors to remove before extraction <span class="muted">(one per line, optional)</span></label>
     <textarea id="exclude" name="exclude" placeholder="div.ads&#10;.sidebar">{{ values.exclude }}</textarea>
 
-    <label for="max_scraps">Articles max par passage <span class="muted">(défaut : 5)</span></label>
+    <label for="max_scraps">Max articles per run <span class="muted">(default: 5)</span></label>
     <input type="number" id="max_scraps" name="max_scraps" value="{{ values.max_scraps }}" min="1" />
 
     <div class="actions">
-      <button class="btn primary" type="submit">{{ "Ajouter" if mode == "new" else "Enregistrer" }}</button>
-      <a class="btn" href="{{ url_for('index') }}">Annuler</a>
+      <button class="btn primary" type="submit">{{ "Add" if mode == "new" else "Save" }}</button>
+      <a class="btn" href="{{ url_for('index') }}">Cancel</a>
     </div>
   </form>
 {% endblock %}

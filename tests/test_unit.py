@@ -123,8 +123,8 @@ class TestDisplayTemplate:
         assert json.loads(json.dumps(DISPLAY_TEMPLATE)) == DISPLAY_TEMPLATE
 
     def test_ships_a_self_describing_icon(self):
-        # Le connecteur fournit son icône (tracé SVG teintable), pas une clé du
-        # jeu intégré des apps : un nouveau connecteur s'affiche sans toucher au code.
+        # The connector provides its own icon (tintable SVG path), not a key of
+        # the apps' built-in set: a new connector renders without touching code.
         icon = DISPLAY_TEMPLATE["display"]["icon"]
         assert isinstance(icon, dict)
         assert icon["paths"]
@@ -371,7 +371,7 @@ class TestProcessRepository:
     @patch("scrape_pages.get_article_links")
     def test_does_nothing_when_listing_page_returns_no_links(self, mock_links):
         mock_links.return_value = []
-        # Ne doit rien appeler côté API — aucun mock nécessaire au-delà de get_article_links.
+        # Must not call the API — no mock needed beyond get_article_links.
         process_repository(1, self._url, datetime.now(tz=timezone.utc), self._make_config())
 
     @patch("scrape_pages.save_entry")

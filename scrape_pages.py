@@ -36,32 +36,32 @@ from bs4 import BeautifulSoup
 
 PROVIDER_TYPE = "scrap"
 
-# Nom affiché du provider dans les apps (fallback : nom de table capitalisé).
+# Display name of the provider in the apps (fallback: capitalized table name).
 DISPLAY_NAME = "Scrap"
 
-# Où ce connecteur se classe parmi les autres dans la barre latérale.
+# Where this connector ranks among the others in the sidebar.
 SORT_ORDER = 40
 
 DEFAULT_MAX_SCRAPS = 5
 
-# Instance stayup-api à laquelle parler, et la clé qui authentifie ce
-# connecteur pour le provider 'scrap' — obtenue depuis l'admin de cette
-# instance (voir stayup-api/docs/self-hosting-and-providers.md).
+# The stayup-api instance to talk to, and the key that authenticates this
+# connector for the 'scrap' provider — obtained from that instance's admin
+# (see stayup-api/docs/self-hosting-and-providers.md).
 API_URL = os.environ.get("STAYUP_API_URL", "http://localhost:3000").rstrip("/")
 API_KEY = os.environ.get("STAYUP_API_KEY")
 
-# Manifeste d'affichage : comment les 3 apps (ui / desktop / mobile) rendent les
-# lignes de ce connecteur, sans une ligne de code côté app. stayup-api le relaie
-# tel quel depuis provider_registry.template, sans jamais l'interpréter.
-# Schéma : voir stayup-api/docs/self-hosting-and-providers.md.
+# Display manifest: how the 3 apps (ui / desktop / mobile) render this
+# connector's rows, without a line of code on the app side. stayup-api relays it
+# as-is from provider_registry.template, without ever interpreting it.
+# Schema: see stayup-api/docs/self-hosting-and-providers.md.
 #
-# Une entrée = un article scrapé. `content` est du texte brut ; `params`
-# porte l'URL de l'article — d'où les accès `$row.params.url`.
+# One entry = a scraped article. `content` is raw text; `params` carries the
+# article URL — hence the `$row.params.url` accesses.
 DISPLAY_TEMPLATE = {
     "version": 1,
     "display": {
         "name": DISPLAY_NAME,
-        # Icône auto-descriptive (tracé SVG teintable). Un globe (page web).
+        # Self-describing icon (tintable SVG path). A globe (web page).
         "icon": {
             "paths": [
                 "M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20z",
@@ -98,9 +98,9 @@ DISPLAY_TEMPLATE = {
         "openUrl": "$row.params.url",
         "openLabel": "Visit website",
     },
-    # Champ « ajouter un flux » : l'URL complète de la page/section à suivre, comme
-    # pour rss. Le provider est en mode `manual` : l'ajout part en file
-    # d'approbation, où un admin renseigne les sélecteurs CSS (articles_selector…).
+    # "Add a flux" field: the full URL of the page/section to follow, like for
+    # rss. The provider is in `manual` mode: adding goes to the approval queue,
+    # where an admin fills in the CSS selectors (articles_selector…).
     "form": {
         "label": "Page URL to scrape",
         "placeholder": "https://blog.example.com/",
@@ -131,7 +131,7 @@ def api_request(method: str, path: str, **kwargs) -> dict | None:
 
 
 def register_provider() -> None:
-    """Auto-déclaration au démarrage — nom affiché et manifeste d'affichage."""
+    """Self-declaration at startup — display name and display manifest."""
     api_request(
         "POST",
         "/register",

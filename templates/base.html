@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -70,11 +70,11 @@
   <body>
     {% if session.get('user') %}
       <header>
-        <span class="brand">Scrap — flux</span>
+        <span class="brand">Scrap — fluxes</span>
         <span>
           <span class="muted">{{ session['user'] }}</span>
           <form class="inline" method="post" action="{{ url_for('logout') }}">
-            <button class="btn link" type="submit">Déconnexion</button>
+            <button class="btn link" type="submit">Sign out</button>
           </form>
         </span>
       </header>

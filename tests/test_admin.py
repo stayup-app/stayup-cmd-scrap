@@ -64,7 +64,7 @@ class TestAuth:
     def test_login_rejects_a_wrong_password(self, client):
         resp = client.post("/login", data={"email": ADMIN_EMAIL, "password": "nope"})
         assert resp.status_code == 401
-        assert b"Identifiants invalides" in resp.data
+        assert b"Invalid credentials" in resp.data
 
     def test_login_establishes_the_session(self, client):
         resp = client.post("/login", data={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
@@ -83,7 +83,7 @@ class TestAuth:
         app.config.update(TESTING=True)
         resp = app.test_client().post("/login", data={"email": "a@b.c", "password": "x"})
         assert resp.status_code == 401
-        assert b"Admin non configur" in resp.data
+        assert b"Admin not configured" in resp.data
 
     def test_delete_requires_authentication(self, client):
         resp = client.post("/1/delete")
@@ -119,9 +119,9 @@ class TestList:
 
     @patch("admin.requests.request")
     def test_filters_out_other_provider_types(self, mock_request, auth_client):
-        # Défense en profondeur côté client : la clé est déjà scopée par
-        # l'API elle-même (elle ne renvoie que le provider "scrap"), mais le
-        # filtre reste correct si jamais un autre type apparaissait ici.
+        # Client-side defense in depth: the key is already scoped by the API
+        # itself (it only returns the "scrap" provider), but the
+        # filter stays correct should another type ever appear here.
         mock_request.return_value = mock_response(
             {
                 "repositories": [
@@ -136,7 +136,7 @@ class TestList:
     def test_empty_state(self, mock_request, auth_client):
         mock_request.return_value = mock_response({"repositories": []})
         resp = auth_client.get("/")
-        assert b"Aucun flux" in resp.data
+        assert b"No flux" in resp.data
 
 
 # ---------------------------------------------------------------------------
@@ -159,8 +159,8 @@ class TestCreate:
                 "max_scraps": "9",
             },
         )
-        # Redirige vers la liste sans la suivre : la suivre déclencherait un
-        # second appel (GET la liste), hors sujet de ce test.
+        # Redirects to the list without following it: following it would trigger a
+        # second call (GET the list), off topic for this test.
         assert resp.status_code == 302
         method, url = mock_request.call_args[0]
         assert method == "POST"
@@ -180,7 +180,7 @@ class TestCreate:
     def test_rejects_a_missing_articles_selector(self, auth_client):
         resp = auth_client.post("/new", data={"url": "https://x.example.com"})
         assert resp.status_code == 400
-        assert b"sont requis" in resp.data
+        assert b"are required" in resp.data
 
     @patch("admin.requests.request")
     def test_surfaces_an_api_error(self, mock_request, auth_client):
@@ -204,9 +204,9 @@ class TestCreate:
 class TestEdit:
     @patch("admin.requests.request")
     def test_updates_url_and_config(self, mock_request, auth_client):
-        # `update()` ne fait qu'un seul appel — PATCH directement, pas de
-        # lecture préalable — donc pas de `follow_redirects` ici : le suivre
-        # déclencherait un second appel (GET la liste), hors sujet.
+        # `update()` makes a single call — PATCH directly, no prior read — so no
+        # `follow_redirects` here: following it would trigger a second call
+        # (GET the list), off topic.
         mock_request.return_value = mock_response({"success": True})
 
         resp = auth_client.post(
@@ -273,8 +273,8 @@ class TestDelete:
             mock_response({"success": True}),
         ]
 
-        # Pas de `follow_redirects` : le suivre déclencherait un 3e appel (GET
-        # la liste, pour la page vers laquelle on redirige), hors sujet.
+        # No `follow_redirects`: following it would trigger a 3rd call (GET the
+        # list, for the page we redirect to), off topic.
         auth_client.post("/4/delete")
 
         method, url = mock_request.call_args_list[1][0]
@@ -291,11 +291,11 @@ class TestDelete:
             }
         )
 
-        # `follow_redirects` ici : le message flash ne s'affiche que sur la
-        # page suivante, qui refait donc son propre appel liste (2 appels
-        # liste au total, jamais de DELETE).
+        # `follow_redirects` here: the flash message only shows on the next
+        # page, which therefore makes its own list call (2 list calls total,
+        # never a DELETE).
         resp = auth_client.post("/4/delete", follow_redirects=True)
-        assert b"Suppression refus\xc3\xa9e" in resp.data
+        assert b"Deletion refused" in resp.data
         assert mock_request.call_count == 2
         for call in mock_request.call_args_list:
             assert call.args[0] == "GET"
