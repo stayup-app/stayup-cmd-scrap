@@ -155,9 +155,7 @@ def create_app() -> Flask:
         ok = creds is not None and hmac.compare_digest(email, creds[0]) and hmac.compare_digest(password, creds[1])
         if not ok:
             flash(
-                "Invalid credentials."
-                if creds
-                else "Admin not configured (SCRAP_ADMIN_EMAIL / SCRAP_ADMIN_PASSWORD)."
+                "Invalid credentials." if creds else "Admin not configured (SCRAP_ADMIN_EMAIL / SCRAP_ADMIN_PASSWORD)."
             )
             return render_template("login.html"), 401
         session["user"] = email
